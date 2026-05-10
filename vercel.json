@@ -1,5 +1,5 @@
 {
   "rewrites": [
-    { "source": "/(.*)", "destination": "/dipindahin-vercel.html" }
+    { "source": "/(.*)", "destination": "/dipindahin-vercel-1.html" }
   ]
 }
