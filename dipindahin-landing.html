@@ -1680,21 +1680,43 @@ async function submitBooking(){
   const dpAmount = isFullPayment ? finalPrice : Math.round(finalPrice * 0.5);
 
   const order = {
+    // Apps Script HEADERS compatible fields
+    orderId: orderId,
     id: orderId,
     name: bData.name || 'Customer',
     phone: (bData.phone || '').replace(/\D/g,'').replace(/^0/,'62'),
     from: bData.from || '',
     to: bData.to || '',
     date: bData.date || '',
+    time: bData.time || '07:00 WIB',
     pkg: bPkg,
+    status: 'confirmed',
+    distKm: bData.distKm || '',
+    payment: isFullPayment ? 'full' : 'dp',
+    notes: (bData.notes || '') + (bData.type ? ` | Tipe: ${bData.type}` : '') + (bData.dist ? ` | Jarak: ${bData.dist}` : ''),
+    fromLat: bData.fromCoords ? bData.fromCoords.lat : '',
+    fromLon: bData.fromCoords ? bData.fromCoords.lon : '',
+    toLat: bData.toCoords ? bData.toCoords.lat : '',
+    toLon: bData.toCoords ? bData.toCoords.lon : '',
+    fragile: bData.fragile || '',
+    fragDetail: bData.fragDetail || '',
+    furniture: bData.furniture || '',
+    type: bData.type || '',
+    addons: bAddons.join(', '),
+    quoteTotal: finalPrice,
+    createdAt: new Date().toISOString(),
+    timeline: JSON.stringify([
+      {key:'booked',label:'Booking Diterima',time:new Date().toLocaleString('id-ID',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}),done:true,active:false},
+      {key:'confirmed',label:'Order Dikonfirmasi',time:new Date(Date.now()+5*60000).toLocaleString('id-ID',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}),done:true,active:false},
+      {key:'moving',label:'Tim Menuju Lokasi',time:'—',done:false,active:false},
+      {key:'packing',label:'Proses Packing & Muat',time:'—',done:false,active:false},
+      {key:'transit',label:'Dalam Perjalanan',time:'—',done:false,active:false},
+      {key:'done',label:'Selesai — Barang Tiba!',time:'—',done:false,active:false},
+    ]),
+    // legacy compat
     price: finalPrice,
     dp: dpAmount,
-    status: 'Baru',
-    payment_method: isFullPayment ? 'Full Payment' : 'DP 50%',
-    notes: (bData.notes || '') + (bData.type ? ` | Tipe: ${bData.type}` : '') + (bData.dist ? ` | Jarak: ${bData.dist}` : ''),
-    addons: bAddons.join(','),
     created: new Date().toISOString().split('T')[0],
-    source: 'landing-page',
   };
 
   console.log('Sending order:', order); // debug
@@ -1859,6 +1881,8 @@ function renderContent(){
 
   /* ── STEP 3: Paket + rekomendasi ── */
   if(bStep===3){
+    // Auto-calculate quote if not yet done
+    if(!bQuote) setTimeout(generateQuote, 300);
     const recPkg = getRecommendedPkg();
     el.innerHTML=`
     ${recPkg?`<div class="smart-hint"><span class="sh-icon">🤖</span>Berdasarkan info kamu, kami sarankan paket <strong>${recPkg}</strong>.</div>`:''}
@@ -1888,7 +1912,7 @@ function renderContent(){
 
   if(bStep===4 && !bData.submitted) el.innerHTML=`
     <div class="confirm-grid">
-      ${[['Nama',bData.name],['WhatsApp',bData.phone],['Paket',bPkg],['Estimasi',fRp(bQuote?.total||0)],['Tanggal',fDate(bData.date)],['Waktu',bData.time||'07:00 WIB'],['Add-on',bAddons.join(', ')||'Tidak ada']]
+      ${[['Nama',bData.name],['WhatsApp',bData.phone],['Paket',bPkg],['Estimasi',fRp(bQuote&&bQuote.total||0)],['Tanggal',fDate(bData.date)],['Waktu',bData.time||'07:00 WIB'],['Add-on',bAddons.join(', ')||'Tidak ada']]
         .map(([l,v])=>`<div class="confirm-item"><div class="ci-lbl">${l}</div><div class="ci-val">${v||'—'}</div></div>`).join('')}
       <div class="confirm-item" style="grid-column:1/-1"><div class="ci-lbl">Dari</div><div class="ci-val" style="font-size:12px">${bData.from}</div></div>
       <div class="confirm-item" style="grid-column:1/-1"><div class="ci-lbl">Ke</div><div class="ci-val" style="font-size:12px">${bData.to}</div></div>
@@ -1899,12 +1923,12 @@ function renderContent(){
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div onclick="selectPayment('dp')" id="pay-dp" style="border:2px solid rgba(255,255,27,.6);border-radius:12px;padding:14px;cursor:pointer;background:rgba(255,255,27,.15);transition:all .2s">
           <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:4px">💰 DP 50%</div>
-          <div style="font-size:20px;font-weight:800;color:#ffff1b;margin-bottom:4px">${fRp(Math.round((bQuote?.total||0)*0.5))}</div>
+          <div style="font-size:20px;font-weight:800;color:#ffff1b;margin-bottom:4px">${fRp(Math.round((bQuote&&bQuote.total||0)*0.5))}</div>
           <div style="font-size:11px;color:rgba(255,255,255,.5)">Sisa dibayar saat pindahan</div>
         </div>
         <div onclick="selectPayment('full')" id="pay-full" style="border:2px solid rgba(255,255,255,.1);border-radius:12px;padding:14px;cursor:pointer;background:rgba(255,255,255,.04);transition:all .2s">
           <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:4px">✅ Full Payment</div>
-          <div style="font-size:20px;font-weight:800;color:#00C878;margin-bottom:4px">${fRp(bQuote?.total||0)}</div>
+          <div style="font-size:20px;font-weight:800;color:#00C878;margin-bottom:4px">${fRp(bQuote&&bQuote.total||0)}</div>
           <div style="font-size:11px;color:rgba(255,255,255,.5)">Diskon 5% untuk full payment</div>
         </div>
       </div>
@@ -1992,6 +2016,11 @@ function bNext(){
     // Auto-select recommended package
     const rec=getRecommendedPkg();
     if(rec && bPkg==='Standard') bPkg=rec;
+  }
+  // Save quote total before going to step 4
+  if(bStep===3){
+    bData={...bData, pkg:bPkg, addons:[...bAddons], addonsTotal:bAddonsTotal,
+      quoteTotal: bQuote&&bQuote.total ? bQuote.total : 0};
   }
   bStep++; render();
 }
@@ -2278,44 +2307,7 @@ async function getOrder(id){
   }catch(e){ return null; }
 }
 
-/* ══════════════════════════════════════════════════════
-   SUBMIT BOOKING — override
-══════════════════════════════════════════════════════ */
-let bSelectedPayment=null;
-function selectPayment(type){
-  bSelectedPayment=type;
-  ['dp','full'].forEach(t=>{
-    const el=document.getElementById('pay-'+t);
-    if(el) el.style.border=t===type?'2px solid rgba(255,255,27,.8)':'2px solid rgba(255,255,255,.1)';
-  });
-  const sel=document.getElementById('payment-selected');
-  if(sel) sel.style.display='block';
-}
-async function submitBooking(){
-  if(!bSelectedPayment){ showAlert('Pilih metode pembayaran dulu.'); return; }
-  const orderId=genOrderId();
-  const now=new Date();
-  const fmt=(d)=>d.toLocaleString('id-ID',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
-  bData.orderId=orderId;
-  bData.submitted=true;
-  bData.status='confirmed';
-  bData.pkg=bPkg;
-  bData.paket=bPkg;
-  bData.createdAt=now.toISOString();
-  bData.payment=bSelectedPayment;
-  bData.timeline=[
-    {key:'booked',    label:'Booking Diterima',      time:fmt(now),                            done:true,  active:false},
-    {key:'confirmed', label:'Order Dikonfirmasi',     time:fmt(new Date(now.getTime()+5*60000)),done:true,  active:false},
-    {key:'moving',    label:'Tim Menuju Lokasi Kamu', time:'—', done:false, active:false},
-    {key:'packing',   label:'Proses Packing & Muat',  time:'—', done:false, active:false},
-    {key:'transit',   label:'Dalam Perjalanan',       time:'—', done:false, active:false},
-    {key:'done',      label:'Selesai — Barang Tiba!', time:'—', done:false, active:false},
-  ];
-  bData.teamLat=null; bData.teamLon=null;
-  // Show saving indicator
-  renderContent(); renderNav();
-  await saveOrder(bData);
-}
+/* selectPayment handled by main booking JS */
 
 /* ══════════════════════════════════════════════════════
    TRACKING MODAL CONTROLS
